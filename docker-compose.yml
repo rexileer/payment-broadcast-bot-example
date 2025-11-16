@@ -1,0 +1,106 @@
+services:
+  db:
+    image: postgres:13
+    container_name: ${CONTAINER_NAME}_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - network_name
+    restart: unless-stopped
+    cpus: 0.2
+    mem_limit: 256m
+
+  web:
+    build: .
+    container_name: ${CONTAINER_NAME}_web
+    command: >
+      sh -c "python manage.py makemigrations &&
+             python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - network_name
+    restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 512m
+
+  tg_bot:
+    build: .
+    container_name: ${CONTAINER_NAME}_tg_bot
+    command: python bot/tg_bot.py
+    environment:
+      - SERVICE_TYPE=bot
+    volumes:
+      - .:/app
+      - bot_session:/app/bot/s1_bot  # Отдельный volume для сессии бота
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - network_name
+    restart: unless-stopped
+    cpus: 0.2
+    mem_limit: 256m
+
+  http_server:
+    build: .
+    container_name: ${CONTAINER_NAME}_http
+    command: python bot/http_server.py
+    environment:
+      - SERVICE_TYPE=http
+    volumes:
+      - .:/app
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - network_name
+    restart: unless-stopped
+    cpus: 0.1
+    mem_limit: 128m
+
+  subscription_checker:
+    build: .
+    container_name: ${CONTAINER_NAME}_subscription_checker
+    command: python run_check_subscriptions.py
+    environment:
+      - SERVICE_TYPE=checker
+      - PYTHONOPTIMIZE=1  # Оптимизация Python для уменьшения потребления памяти
+    volumes:
+      - .:/app
+      - checker_session:/app/bot/s1_checker  # Отдельный volume для сессии checker
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - network_name
+    restart: unless-stopped
+    cpus: 0.15
+    mem_limit: 250m  # Увеличиваем лимит памяти
+
+networks:
+  network_name:
+    external: false
+    name: ${NETWORK_NAME}
+
+volumes:
+  postgres_data:
+  bot_session:    # Отдельный volume для сессии бота
+  checker_session:  # Отдельный volume для сессии checker
